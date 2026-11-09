@@ -1,0 +1,15 @@
+[Unit]
+Description=Hushlight — lights out, sound off
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/python3 %h/.local/share/hushlight/hushlight.py
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=graphical-session.target
