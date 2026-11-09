@@ -31,7 +31,7 @@ else:
         "[Desktop Entry]\nType=Application\nName=Hushlight — Good Night\n"
         "Comment=Blank the monitors and let Hushlight hush your audio\n"
         f'Exec=/usr/bin/python3 "{script}" --blank\n'
-        "Icon=hushlight\nTerminal=false\nStartupNotify=false\n"
+        f"Icon={icon}\nTerminal=false\nStartupNotify=false\n"
         "Categories=Utility;\nKeywords=moon;night;bedtime;screen;mute;\n"
     )
     if args.pin and app_id not in favorites:
