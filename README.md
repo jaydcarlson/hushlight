@@ -34,6 +34,20 @@ From your logged-in GNOME session:
 ./install.sh
 ```
 
+Installation also adds **Hushlight — Good Night** to your applications, with a
+moon icon. Click it to immediately turn off the monitors; the running Hushlight
+service mutes audio as usual. Move the mouse or press a key to wake the display.
+This blanks the monitors without suspending the computer or explicitly locking
+the session. To also pin the moon launcher to the GNOME dock:
+
+```sh
+./install.sh --pin
+```
+
+The same action is available from the command line with
+`/usr/bin/python3 hushlight.py --blank`. Audio muting requires the background
+service to be running. Uninstalling also removes the launcher and its dock pin.
+
 The installer checks compatibility, copies the app into `~/.local/share/hushlight`,
 and enables a user service. No root privileges are needed to install Hushlight.
 Run the installer again after pulling updates.

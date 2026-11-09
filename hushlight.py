@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import time
 
 LOG = logging.getLogger("hushlight")
 DISPLAY = "org.gnome.Mutter.DisplayConfig"
@@ -105,10 +106,18 @@ def display_blank(bus):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Check display/audio without changing anything")
+    parser.add_argument("--blank", action="store_true", help="Blank the monitors now, then exit")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     from gi.repository import Gio, GLib
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    if args.blank:
+        # Let the launcher click finish so its release does not immediately wake us.
+        time.sleep(0.35)
+        bus.call_sync(DISPLAY, DISPLAY_PATH, "org.freedesktop.DBus.Properties", "Set",
+                      GLib.Variant("(ssv)", (DISPLAY, "PowerSaveMode", GLib.Variant("i", 3))),
+                      None, Gio.DBusCallFlags.NONE, 3000, None)
+        return
     audio = Audio()
     if args.check:
         blank = display_blank(bus)

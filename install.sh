@@ -8,4 +8,5 @@ install -m 755 hushlight.py "$HOME/.local/share/hushlight/hushlight.py"
 install -m 644 hushlight.service "$HOME/.config/systemd/user/hushlight.service"
 systemctl --user daemon-reload
 systemctl --user enable --now hushlight.service
+/usr/bin/python3 desktop.py "$@"
 printf 'Hushlight installed and running. Logs: journalctl --user -u hushlight -f\n'
