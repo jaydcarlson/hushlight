@@ -4,7 +4,7 @@ PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
-ExecStart=/usr/bin/python3 %h/.local/share/hushlight/hushlight.py
+ExecStart=%h/.local/share/hushlight/hushlight
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=45

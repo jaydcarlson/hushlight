@@ -2,121 +2,127 @@
 
 **Lights out, sound off.**
 
-Hushlight mutes your audio outputs when GNOME blanks the screen, then restores
-each output's previous mute state when the display wakes. Your computer can keep
-running all night without notification sounds waking you up.
+A small Rust daemon that mutes your PipeWire audio outputs when the monitors
+blank, then restores their previous mute states when you wake the display.
+Your computer can keep running all night without notification sounds waking you.
 
-- Restores audio on display wake, even if the lock screen is still showing.
-- Preserves outputs you had already muted and leaves volume levels alone.
-- Mutes all PipeWire audio outputs, including newly connected headphones or HDMI.
-- Runs in the background and starts automatically with your desktop session.
-- Saves original mute states before changing them, so restarting the app can recover.
-- Uses installed system tools; no Python packages to download from PyPI.
+- Native PipeWire subscriptions for output discovery, hotplug, and mute changes.
+- No audio subprocesses, shell commands, or JSON audio snapshots at runtime.
+- Preserves already-muted outputs and leaves volume levels and microphones alone.
+- Handles HDMI outputs disappearing and reconnecting during monitor power-off.
+- Journals mute states before changing them and waits for restoration acknowledgments.
+- Starts with your GNOME desktop; includes a moon launcher for bedtime.
 
-## Requirements
+## Build and install
 
-GNOME with Mutter's `org.gnome.Mutter.DisplayConfig.PowerSaveMode` interface,
-PipeWire with WirePlumber, systemd user services, Python 3.10+, and PyGObject.
-Developed on Ubuntu 24.04 / GNOME 46 / X11. The GNOME interface is also available
-on Wayland, but that session type has not been tested here.
+Requires a current stable Rust toolchain, GNOME, PipeWire, and systemd user services.
+Tested on Ubuntu 24.04 / GNOME 46 / X11 / PipeWire 1.0.5. GNOME Wayland support
+uses the same Mutter D-Bus interface as the original version, but is not yet
+verified in a Wayland desktop session.
 
-On Ubuntu, if dependencies are missing:
-
-```sh
-sudo apt install python3 python3-gi pipewire-bin wireplumber
-```
-
-## Install
-
-From your logged-in GNOME session:
+Build dependencies on Ubuntu:
 
 ```sh
-./install.sh
+sudo apt install build-essential pkg-config libclang-dev \
+    libpipewire-0.3-dev libspa-0.2-dev libglib2.0-dev
 ```
 
-Installation also adds **Hushlight — Good Night** to your applications, with a
-moon icon. Click it to immediately turn off the monitors; the running Hushlight
-service mutes audio as usual. Move the mouse or press a key to wake the display.
-This blanks the monitors without suspending the computer or explicitly locking
-the session. To also pin the moon launcher to the GNOME dock:
+Install from your logged-in GNOME session:
 
 ```sh
 ./install.sh --pin
 ```
 
-The same action is available from the command line with
-`/usr/bin/python3 hushlight.py --blank`. Audio muting requires the background
-service to be running. Uninstalling also removes the launcher and its dock pin.
+Omit `--pin` to install without adding the moon icon to your dock. The installer
+builds a release binary, checks compatibility, stops the previous service so it
+can restore audio, then installs and starts the replacement. No root privileges
+are needed to install Hushlight itself. Run the installer again after pulling updates.
 
-The installer checks compatibility, copies the app into `~/.local/share/hushlight`,
-and enables a user service. No root privileges are needed to install Hushlight.
-Run the installer again after pulling updates.
+The app, installer helper, and launcher are native Rust; Python is not required.
+The executable links against the system PipeWire and GLib/GIO libraries.
 
 ## Use
 
+Click **Hushlight — Good Night** in your dock or applications to blank all monitors.
+Hushlight mutes the audio automatically. Move the mouse or press a key to wake
+the displays and restore sound. This does not suspend the computer or explicitly
+lock the session.
+
 ```sh
+~/.local/share/hushlight/hushlight --check  # Read-only diagnostics
+~/.local/share/hushlight/hushlight --blank  # Same as the moon launcher
 systemctl --user status hushlight
 journalctl --user -u hushlight -f
+# Alternative if your account cannot read the journal:
 tail -f ~/.local/state/hushlight/hushlight.log
-systemctl --user stop hushlight      # Pause and restore audio
-systemctl --user start hushlight     # Resume
-systemctl --user disable --now hushlight  # Stop and disable autostart
+systemctl --user stop hushlight            # Restore audio and pause
+systemctl --user start hushlight           # Resume
+systemctl --user disable --now hushlight   # Stop and disable autostart
 ./uninstall.sh
 ```
 
-To inspect compatibility without changing audio:
-
-```sh
-/usr/bin/python3 hushlight.py --check
-```
-
-To run in the foreground, stop the service first, then run
-`/usr/bin/python3 hushlight.py`. Ctrl+C restores audio. A lock prevents two
-instances from managing audio simultaneously.
+To run in a terminal, stop the service and run `target/release/hushlight`.
+Ctrl+C restores connected outputs. A shared lock prevents two instances from
+changing audio at once, including the previous Python version.
 
 ## How it works
 
-Hushlight listens for GNOME display power changes on the session D-Bus. On X11,
-it reads the X server's actual DPMS state through libX11/libXext because GNOME's
-cached power state can remain "off" after mouse/keyboard input wakes the monitors.
-On Wayland, it reads GNOME's power state.
-Standby, suspend, or off means mute; on means restore. A lightweight display check
-every 250 milliseconds catches wakeups even when GNOME does not emit a power-state
-signal. Audio reconciliation runs on display transitions and otherwise at most
-every two seconds to catch new outputs, retry temporary failures, and re-mute
-outputs that another application unmutes while blank. While awake, it only
-queries display state unless audio restoration is pending.
+**Audio:** A persistent connection to the native PipeWire API subscribes to
+`Audio/Sink` nodes and their `Props` parameters. Device and mute events immediately
+wake the main loop. Hushlight writes only the node's `mute` property, without
+changing routing, channel volumes, or microphone settings. This node-level mute
+can differ from the route mute displayed by desktop volume controls; the native
+`--check` command reports the state Hushlight actually manages.
 
-`pw-dump` supplies output identities and mute states; `wpctl` changes mute only.
-PipeWire server cookies and stable node names prevent restoring state onto reused
-numeric IDs while allowing HDMI outputs to disappear and reconnect when the
-monitor powers off. State lives in `$XDG_RUNTIME_DIR/hushlight`, outside the repo.
-Stopping the service restores connected outputs. Disconnected outputs' records
-are retained until they reconnect and Hushlight can restore them while awake.
-A PipeWire server restart discards records from the previous server. Restoration
-across reconnect requires the output's node name to remain the same.
+**Display:** On X11, Hushlight reads actual DPMS power state directly through the
+X protocol. GNOME's cached state can still say "off" after the monitors wake, so
+it is deliberately not used for X11 detection. DPMS notifications are enabled
+when the X server supports them; older servers use a lightweight 250 ms fallback.
+On GNOME Wayland, Hushlight queries Mutter's power-state property every 250 ms.
+There is no audio polling subprocess or two-second audio restoration delay.
 
-This follows **display power state**, not screen locking alone. A monitor's
-physical power button may not update the state reported by the desktop. On X11,
-DPMS must be enabled; a screensaver overlay without DPMS power-off is not detected.
-All audio is muted, including music and calls; microphones are untouched.
-Audio sent directly to ALSA or external hardware outside PipeWire is not covered.
-There can be a short delay while audio commands run; new outputs are detected on
-the next reconciliation. If the display wakes for a notification, audio restores
-just as it does on any other display wake.
+**Recovery:** Original mute states are saved atomically to
+`$XDG_RUNTIME_DIR/hushlight/state.json` before a mute request. Restoration records
+are cleared only after PipeWire reports the requested state. A crash/restart
+while blank preserves the original states. Server cookies and stable node names
+avoid restoring onto reused numeric IDs and allow HDMI reconnects. A new audio
+server invalidates the previous server's records. Temporary removal errors do
+not terminate the daemon; connection loss causes systemd to restart it.
+
+A normal stop waits up to three seconds for connected outputs to restore.
+Disconnected outputs retain their records until they reconnect while Hushlight
+is running and the display is awake. Reconnection requires a stable node name.
+The Python version's state-file format remains compatible during upgrades.
+
+## Limits
+
+- All audio through managed outputs is muted, including music and calls.
+- Audio sent directly to ALSA or external hardware bypassing PipeWire is not covered.
+- A monitor's physical power button may not update the desktop's display power state.
+- On X11, DPMS must be enabled; a screensaver overlay without power-off is not detected.
+- Any display wake, including a notification-induced wake, restores audio.
+- The 250 ms fallback plus audio processing sets the wake response time on older X servers.
 
 ## Development
 
 ```sh
-python3 -m unittest discover -s tests -v
+cargo fmt --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
+cargo build --release --locked
 ```
 
-Tests cover mute restoration, already-muted outputs, hotplug, manual unmuting,
-crash recovery, temporary errors, and reused IDs. For a desktop smoke test, run
-the service, let GNOME blank the display, then wake it and check the journal and
-audio mute state. Test both an initially muted and an initially unmuted output.
+Tests cover preserved mute states, wake-before-mute-acknowledgment races, device
+reconnects, server restarts, hotplug, external unmuting, native mute parameter
+encoding, state migration, and the distinction between a removed node and a
+server disconnect. GitHub Actions builds and checks the native implementation.
+
+Desktop validation should include an audible source, a previously muted output,
+HDMI reconnect, termination while blank, and restart after a forced process exit.
+Wake the monitors with input or `xset dpms force on` on X11; explicitly resetting
+GNOME's cached power state can hide the stale-state bug this implementation avoids.
 
 Interface references:
-[GNOME display power API](https://gitlab.gnome.org/GNOME/mutter/-/blob/46.0/data/dbus-interfaces/org.gnome.Mutter.DisplayConfig.xml),
-[pw-dump](https://docs.pipewire.org/page_man_pw-dump_1.html),
-[wpctl](https://pipewire.pages.freedesktop.org/wireplumber/man/wpctl.html).
+[PipeWire node API](https://docs.pipewire.org/group__pw__node.html),
+[DPMS protocol](https://www.x.org/releases/X11R7.7-RC1/doc/xextproto/dpms.pdf),
+[GNOME display power API](https://gitlab.gnome.org/GNOME/mutter/-/blob/46.0/data/dbus-interfaces/org.gnome.Mutter.DisplayConfig.xml).

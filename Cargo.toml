@@ -1,0 +1,21 @@
+[package]
+name = "hushlight"
+version = "0.2.0"
+edition = "2024"
+description = "Lights out, sound off: native GNOME display and PipeWire audio automation"
+repository = "https://github.com/jaydcarlson/hushlight"
+
+[dependencies]
+anyhow = "1"
+pipewire = "0.10.1"
+serde_json = "1"
+libc = "0.2"
+signal-hook = "0.3"
+fs2 = "0.4"
+x11rb = { version = "0.14", features = ["dpms"] }
+gio = "0.21"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
