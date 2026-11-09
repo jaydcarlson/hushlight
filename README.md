@@ -68,11 +68,13 @@ another application unmutes while the display is blank. While awake, it only
 queries display state unless audio restoration is pending.
 
 `pw-dump` supplies output identities and mute states; `wpctl` changes mute only.
-PipeWire server cookies and object serials prevent restoring stale state onto
-reused device IDs. State lives in `$XDG_RUNTIME_DIR/hushlight`, outside the repo.
+PipeWire server cookies and stable node names prevent restoring state onto reused
+numeric IDs while allowing HDMI outputs to disappear and reconnect when the
+monitor powers off. State lives in `$XDG_RUNTIME_DIR/hushlight`, outside the repo.
 Stopping the service restores connected outputs. Disconnected outputs' records
-are discarded; a reconnected device is treated as a new output with its current
-mute state. A PipeWire restart likewise creates new output identities.
+are retained until they reconnect and Hushlight can restore them while awake.
+A PipeWire server restart discards records from the previous server. Restoration
+across reconnect requires the output's node name to remain the same.
 
 This follows **GNOME's display power state**, not screen locking alone. A monitor's
 physical power button or blanking through tools outside GNOME may not update that

@@ -10,6 +10,7 @@ from hushlight import Audio, Controller
 
 class FakeAudio:
     def __init__(self):
+        self.cookie = "server"
         self.sinks = {
             "server:1": {"id": 10, "name": "speakers", "mute": False},
             "server:2": {"id": 20, "name": "headphones", "mute": True},
@@ -72,8 +73,21 @@ class ControllerTests(unittest.TestCase):
     def test_server_restart_cannot_restore_reused_ids(self):
         self.controller.reconcile(True)
         self.audio.sinks = {"newserver:1": {"id": 10, "name": "other", "mute": True}}
+        self.audio.cookie = "newserver"
         self.controller.reconcile(False)
         self.assertTrue(self.audio.sinks["newserver:1"]["mute"])
+        self.assertEqual(self.controller.saved, {})
+
+    def test_hdmi_disconnect_reconnect_restores_original_mute(self):
+        self.controller.reconcile(True)
+        hdmi = self.audio.sinks.pop("server:1")
+        self.controller.reconcile(True)
+        self.controller.reconcile(False)
+        self.assertIn("server:1", self.controller.saved)
+        hdmi["id"] = 99
+        self.audio.sinks["server:1"] = hdmi
+        self.controller.reconcile(False)
+        self.assertFalse(self.audio.sinks["server:1"]["mute"])
         self.assertEqual(self.controller.saved, {})
 
     def test_empty_outputs_and_failed_mute_recover(self):
@@ -95,13 +109,13 @@ class AudioTests(unittest.TestCase):
         command.return_value = json.dumps([
             {"id": 0, "type": "PipeWire:Interface:Core", "info": {"cookie": 123}},
             {"id": 1, "type": "PipeWire:Interface:Node", "info": {
-                "props": {"media.class": "Audio/Sink", "object.serial": 456},
+                "props": {"media.class": "Audio/Sink", "object.serial": 456, "node.name": "speaker"},
                 "params": {"Props": [{"mute": False}]}}},
             {"id": 2, "type": "PipeWire:Interface:Node", "info": {
                 "props": {"media.class": "Audio/Source", "object.serial": 789}}},
         ])
         self.assertEqual(Audio().snapshot(), {
-            "123:456": {"id": 1, "name": "1", "mute": False}})
+            "123:speaker": {"id": 1, "name": "speaker", "mute": False}})
 
     @patch("hushlight.command")
     def test_removed_output_is_not_mutated(self, command):

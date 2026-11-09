@@ -25,6 +25,7 @@ class Audio:
         objects = json.loads(command("pw-dump"))
         cookie = next(o["info"]["cookie"] for o in objects
                       if o["type"] == "PipeWire:Interface:Core")
+        self.cookie = str(cookie)
         sinks = {}
         for obj in objects:
             info = obj.get("info", {})
@@ -35,8 +36,9 @@ class Audio:
                          if isinstance(p.get("mute"), bool)), None)
             if mute is None:
                 raise RuntimeError(f"Cannot read mute state for sink {obj['id']}")
-            # IDs are reused; cookie + serial identifies this server and object lifetime.
-            key = f"{cookie}:{props['object.serial']}"
+            # HDMI nodes disappear on display power-off. Names survive that reconnect;
+            # the server cookie prevents restoring records from an old audio server.
+            key = f"{cookie}:{props['node.name']}"
             sinks[key] = {"id": obj["id"], "mute": mute,
                           "name": props.get("node.name", str(obj["id"]))}
         return sinks
@@ -63,6 +65,12 @@ class Controller:
 
     def reconcile(self, blank):
         sinks = self.audio.snapshot()
+        obsolete = [key for key in self.saved
+                    if key.split(":", 1)[0] != self.audio.cookie]
+        if obsolete:
+            for key in obsolete:
+                del self.saved[key]
+            self.save()
         if blank:
             for key, sink in sinks.items():
                 if key not in self.saved:
@@ -74,17 +82,13 @@ class Controller:
                     LOG.info("Muted %s", sink["name"])
         else:
             for key, original in list(self.saved.items()):
+                if key not in sinks:
+                    continue  # HDMI may reconnect a little after the display wakes.
                 if key in sinks and sinks[key]["mute"] != original:
                     self.audio.mute(key, original)
                     LOG.info("Restored %s", sinks[key]["name"])
                 del self.saved[key]
                 self.save()
-        # Disconnected objects cannot return with the same serial; discard their records.
-        stale = self.saved.keys() - sinks.keys()
-        if stale:
-            for key in stale:
-                del self.saved[key]
-            self.save()
 
 
 def display_blank(bus):
