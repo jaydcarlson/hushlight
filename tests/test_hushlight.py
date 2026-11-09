@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from hushlight import Audio, Controller
+from hushlight import Audio, Controller, Screen, decode_dump
 
 
 class FakeAudio:
@@ -104,6 +104,17 @@ class ControllerTests(unittest.TestCase):
 
 
 class AudioTests(unittest.TestCase):
+    def test_hotplug_dump_batches_merge_updates_and_removals(self):
+        first = [{"id": 1, "type": "node", "info": {
+            "props": {"node.name": "speaker"}, "params": {"Props": [{"mute": True}]}}},
+            {"id": 2, "info": {"props": {"node.name": "HDMI"}}}]
+        updates = [{"id": 1, "info": {"params": {"Props": [{"mute": False}]}}},
+                   {"id": 2, "info": None}]
+        result = decode_dump(json.dumps(first) + "\n" + json.dumps(updates) + "\n")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["info"]["props"]["node.name"], "speaker")
+        self.assertFalse(result[0]["info"]["params"]["Props"][0]["mute"])
+
     @patch("hushlight.command")
     def test_snapshot_excludes_microphones(self, command):
         command.return_value = json.dumps([
@@ -123,6 +134,28 @@ class AudioTests(unittest.TestCase):
         with patch.object(audio, "snapshot", return_value={}):
             audio.mute("old:1", False)
         command.assert_not_called()
+
+
+class ScreenTests(unittest.TestCase):
+    @patch.dict("os.environ", {"XDG_SESSION_TYPE": "x11"})
+    @patch("hushlight.display_blank", return_value=True)
+    @patch("hushlight.X11Power")
+    def test_x11_wake_overrides_stale_gnome_off_state(self, power, gnome):
+        power.return_value.blank.return_value = False
+        screen = Screen(object())
+        self.assertFalse(screen.blank())
+        gnome.assert_not_called()
+        screen.close()
+        power.return_value.close.assert_called_once()
+
+    @patch.dict("os.environ", {"XDG_SESSION_TYPE": "wayland", "DISPLAY": ":0"})
+    @patch("hushlight.display_blank", return_value=True)
+    @patch("hushlight.X11Power")
+    def test_wayland_uses_gnome_even_when_xwayland_available(self, power, gnome):
+        screen = Screen(object())
+        self.assertTrue(screen.blank())
+        power.assert_not_called()
+        gnome.assert_called_once()
 
 
 if __name__ == "__main__":

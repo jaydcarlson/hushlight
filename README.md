@@ -57,6 +57,7 @@ Run the installer again after pulling updates.
 ```sh
 systemctl --user status hushlight
 journalctl --user -u hushlight -f
+tail -f ~/.local/state/hushlight/hushlight.log
 systemctl --user stop hushlight      # Pause and restore audio
 systemctl --user start hushlight     # Resume
 systemctl --user disable --now hushlight  # Stop and disable autostart
@@ -75,10 +76,15 @@ instances from managing audio simultaneously.
 
 ## How it works
 
-Hushlight listens for GNOME display power changes on the session D-Bus.
-Standby, suspend, or off means mute; on means restore. A two-second reconciliation
-timer catches new outputs, retries temporary failures, and re-mutes outputs that
-another application unmutes while the display is blank. While awake, it only
+Hushlight listens for GNOME display power changes on the session D-Bus. On X11,
+it reads the X server's actual DPMS state through libX11/libXext because GNOME's
+cached power state can remain "off" after mouse/keyboard input wakes the monitors.
+On Wayland, it reads GNOME's power state.
+Standby, suspend, or off means mute; on means restore. A lightweight display check
+every 250 milliseconds catches wakeups even when GNOME does not emit a power-state
+signal. Audio reconciliation runs on display transitions and otherwise at most
+every two seconds to catch new outputs, retry temporary failures, and re-mute
+outputs that another application unmutes while blank. While awake, it only
 queries display state unless audio restoration is pending.
 
 `pw-dump` supplies output identities and mute states; `wpctl` changes mute only.
@@ -90,9 +96,10 @@ are retained until they reconnect and Hushlight can restore them while awake.
 A PipeWire server restart discards records from the previous server. Restoration
 across reconnect requires the output's node name to remain the same.
 
-This follows **GNOME's display power state**, not screen locking alone. A monitor's
-physical power button or blanking through tools outside GNOME may not update that
-state. All audio is muted, including music and calls; microphones are untouched.
+This follows **display power state**, not screen locking alone. A monitor's
+physical power button may not update the state reported by the desktop. On X11,
+DPMS must be enabled; a screensaver overlay without DPMS power-off is not detected.
+All audio is muted, including music and calls; microphones are untouched.
 Audio sent directly to ALSA or external hardware outside PipeWire is not covered.
 There can be a short delay while audio commands run; new outputs are detected on
 the next reconciliation. If the display wakes for a notification, audio restores
